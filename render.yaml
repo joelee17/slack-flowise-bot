@@ -1,0 +1,19 @@
+services:
+  - type: web
+    name: slack-flowise-bot
+    env: python
+    buildCommand: pip install -r requirements.txt
+    startCommand: python app.py
+    envVars:
+      - key: SLACK_BOT_TOKEN
+        sync: false
+      - key: SLACK_APP_TOKEN
+        sync: false
+      - key: SLACK_SIGNING_SECRET
+        sync: false
+      - key: FLOWISE_URL
+        value: https://flowise-bwww.onrender.com/api/v1/prediction/376b207c-2027-47be-98c7-12f3d4e81c75
+      - key: PORT
+        value: 10000
+    healthCheckPath: /health
+
