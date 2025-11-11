@@ -79,6 +79,9 @@ def detect_response_type(text):
 
 def format_expense_policy_blocks(text):
     """Format expense policy response with document-style layout"""
+    # Convert **text** to *text* for proper Slack markdown
+    formatted_text = text.replace('**', '*')
+    
     blocks = [
         {
             "type": "header",
@@ -92,7 +95,7 @@ def format_expense_policy_blocks(text):
             "type": "section",
             "text": {
                 "type": "mrkdwn",
-                "text": text
+                "text": formatted_text
             }
         },
         {
@@ -112,6 +115,9 @@ def format_expense_policy_blocks(text):
 
 def format_worker_list_blocks(text):
     """Format worker list response with structured layout"""
+    # Parse the worker list and create individual sections for each worker
+    lines = [line.strip() for line in text.split('\n') if line.strip() and line.strip().startswith('-')]
+    
     blocks = [
         {
             "type": "header",
@@ -120,14 +126,59 @@ def format_worker_list_blocks(text):
                 "text": "👥 Worker Search Results",
                 "emoji": True
             }
-        },
-        {
+        }
+    ]
+    
+    # If we can parse individual workers, format them nicely
+    if lines:
+        # Add intro text if there's any text before the list
+        intro_text = text.split('\n')[0] if not text.strip().startswith('-') else None
+        if intro_text and intro_text.strip():
+            blocks.append({
+                "type": "section",
+                "text": {
+                    "type": "mrkdwn",
+                    "text": intro_text.strip()
+                }
+            })
+        
+        # Format each worker as a separate section
+        for line in lines[:10]:  # Limit to 10 workers to avoid block limits
+            # Remove the leading dash and clean up
+            worker_text = line.lstrip('- ').strip()
+            # Convert **Name** to *Name* for proper Slack bold formatting
+            worker_text = worker_text.replace('**', '*')
+            
+            blocks.append({
+                "type": "section",
+                "text": {
+                    "type": "mrkdwn",
+                    "text": f"• {worker_text}"
+                }
+            })
+        
+        # If there are more than 10 workers, add a note
+        if len(lines) > 10:
+            blocks.append({
+                "type": "section",
+                "text": {
+                    "type": "mrkdwn",
+                    "text": f"_...and {len(lines) - 10} more workers_"
+                }
+            })
+    else:
+        # Fallback: just display the text as-is with proper markdown
+        formatted_text = text.replace('**', '*')
+        blocks.append({
             "type": "section",
             "text": {
                 "type": "mrkdwn",
-                "text": text
+                "text": formatted_text
             }
-        },
+        })
+    
+    # Add footer
+    blocks.extend([
         {
             "type": "divider"
         },
@@ -140,11 +191,15 @@ def format_worker_list_blocks(text):
                 }
             ]
         }
-    ]
+    ])
+    
     return blocks
 
 def format_card_confirmation_blocks(text):
     """Format card confirmation response with success styling"""
+    # Convert **text** to *text* for proper Slack markdown
+    formatted_text = text.replace('**', '*')
+    
     blocks = [
         {
             "type": "header",
@@ -158,7 +213,7 @@ def format_card_confirmation_blocks(text):
             "type": "section",
             "text": {
                 "type": "mrkdwn",
-                "text": text
+                "text": formatted_text
             }
         },
         {
@@ -185,12 +240,15 @@ def format_card_confirmation_blocks(text):
 
 def format_generic_blocks(text):
     """Format generic response with clean, professional layout"""
+    # Convert **text** to *text* for proper Slack markdown
+    formatted_text = text.replace('**', '*')
+    
     blocks = [
         {
             "type": "section",
             "text": {
                 "type": "mrkdwn",
-                "text": f"💬 {text}"
+                "text": f"💬 {formatted_text}"
             }
         },
         {
