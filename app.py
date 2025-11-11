@@ -26,20 +26,36 @@ app = App(
 # Flowise configuration
 FLOWISE_URL = os.environ.get("FLOWISE_URL", "https://flowise-bwww.onrender.com/api/v1/prediction/376b207c-2027-47be-98c7-12f3d4e81c75")
 
-# Store user sessions (Slack user ID -> Flowise session ID)
-user_sessions = {}
+# Store thread sessions (Thread ID -> Flowise session ID)
+# Each thread gets its own session for fresh conversations
+thread_sessions = {}
 
-def get_flowise_session_id(slack_user_id):
-    """Get or create a Flowise session ID for a Slack user"""
-    if slack_user_id not in user_sessions:
-        # Create a new session ID for this user
-        user_sessions[slack_user_id] = f"slack-{slack_user_id}-{datetime.now().strftime('%Y%m%d%H%M%S')}"
-    return user_sessions[slack_user_id]
+def get_flowise_session_id(slack_user_id, thread_id=None):
+    """Get or create a Flowise session ID for a thread or user
+    
+    Args:
+        slack_user_id: Slack user ID
+        thread_id: Thread timestamp (if in a thread), or None for DMs
+    
+    Returns:
+        Flowise session ID
+    """
+    # Use thread_id as the key if provided (each thread = new conversation)
+    # Otherwise use user_id (for DMs, maintain conversation)
+    session_key = thread_id if thread_id else f"dm-{slack_user_id}"
+    
+    if session_key not in thread_sessions:
+        # Create a new session ID for this thread/DM
+        timestamp = datetime.now().strftime('%Y%m%d%H%M%S')
+        thread_sessions[session_key] = f"slack-{session_key}-{timestamp}"
+        logger.info(f"Created new session: {thread_sessions[session_key]} for key: {session_key}")
+    
+    return thread_sessions[session_key]
 
-def chat_with_flowise(message, slack_user_id):
+def chat_with_flowise(message, slack_user_id, thread_id=None):
     """Send message to Flowise and get response"""
     try:
-        session_id = get_flowise_session_id(slack_user_id)
+        session_id = get_flowise_session_id(slack_user_id, thread_id)
         
         payload = {
             "question": message,
@@ -83,6 +99,7 @@ def handle_app_mention(event, say, logger):
     """Handle when the bot is mentioned in a channel"""
     user_id = event["user"]
     text = event["text"]
+    thread_ts = event.get("thread_ts", event["ts"])  # Use thread_ts or message ts as thread ID
     
     # Remove the bot mention from the text
     # Slack mentions look like <@U12345678>
@@ -92,19 +109,19 @@ def handle_app_mention(event, say, logger):
     if not clean_text:
         say(
             text="Hi! I'm the Travel Card Assistant. Ask me anything about provisioning travel cards!",
-            thread_ts=event.get("thread_ts", event["ts"])
+            thread_ts=thread_ts
         )
         return
     
-    logger.info(f"App mention from user {user_id}: {clean_text}")
+    logger.info(f"App mention from user {user_id} in thread {thread_ts}: {clean_text}")
     
-    # Get response from Flowise
-    response = chat_with_flowise(clean_text, user_id)
+    # Get response from Flowise (pass thread_ts for session management)
+    response = chat_with_flowise(clean_text, user_id, thread_ts)
     
-    # Reply in thread if the message was in a thread, otherwise reply normally
+    # Reply in thread
     say(
         text=response,
-        thread_ts=event.get("thread_ts", event["ts"])
+        thread_ts=thread_ts
     )
 
 # Handle direct messages and thread replies
@@ -120,19 +137,17 @@ def handle_message(event, say, logger):
     channel_type = event.get("channel_type")
     thread_ts = event.get("thread_ts")
     
-    # Handle direct messages (DMs)
+    # Handle direct messages (DMs) - maintain conversation per user
     if channel_type == "im":
         logger.info(f"DM from user {user_id}: {text}")
-        response = chat_with_flowise(text, user_id)
+        response = chat_with_flowise(text, user_id, thread_id=None)  # No thread_id for DMs
         say(text=response)
         return
     
     # Handle thread replies (when user replies in a thread where bot is already present)
     if thread_ts:
-        # Only respond if the bot was mentioned in the original thread
-        # or if this is a reply in a thread the bot started
-        logger.info(f"Thread reply from user {user_id}: {text}")
-        response = chat_with_flowise(text, user_id)
+        logger.info(f"Thread reply from user {user_id} in thread {thread_ts}: {text}")
+        response = chat_with_flowise(text, user_id, thread_ts)  # Pass thread_ts for session
         say(text=response, thread_ts=thread_ts)
         return
 
@@ -151,8 +166,10 @@ def handle_travelcard_command(ack, command, say, logger):
     
     logger.info(f"Slash command from user {user_id}: {text}")
     
-    # Get response from Flowise
-    response = chat_with_flowise(text, user_id)
+    # Get response from Flowise (slash commands get their own session per invocation)
+    # Use a unique ID for each slash command invocation
+    slash_session_id = f"slash-{user_id}-{datetime.now().strftime('%Y%m%d%H%M%S%f')}"
+    response = chat_with_flowise(text, user_id, slash_session_id)
     
     # Reply to the user
     say(response)
