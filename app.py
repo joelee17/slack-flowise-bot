@@ -52,16 +52,42 @@ def get_flowise_session_id(slack_user_id, thread_id=None):
     
     return thread_sessions[session_key]
 
-def format_response_blocks(text):
-    """Format Flowise response text into Slack Block Kit blocks
+def detect_response_type(text):
+    """Detect the type of response from Flowise
     
     Args:
         text: The response text from Flowise
         
     Returns:
-        List of Slack blocks for rich formatting
+        str: 'expense_policy', 'worker_list', 'card_confirmation', or 'generic'
     """
+    text_lower = text.lower()
+    
+    # Check for expense policy (contains policy keywords)
+    if any(keyword in text_lower for keyword in ['expense', 'policy', 'reimbursement', 'receipt', 'approval']):
+        return 'expense_policy'
+    
+    # Check for worker list (contains worker/employee keywords and likely has multiple names)
+    if any(keyword in text_lower for keyword in ['worker', 'employee', 'found', 'search results']) and text.count('\n') > 2:
+        return 'worker_list'
+    
+    # Check for card confirmation (contains confirmation keywords)
+    if any(keyword in text_lower for keyword in ['provisioned', 'created', 'card number', 'stripe', 'success', 'uploaded to workday']):
+        return 'card_confirmation'
+    
+    return 'generic'
+
+def format_expense_policy_blocks(text):
+    """Format expense policy response with document-style layout"""
     blocks = [
+        {
+            "type": "header",
+            "text": {
+                "type": "plain_text",
+                "text": "📋 Expense Policy Information",
+                "emoji": True
+            }
+        },
         {
             "type": "section",
             "text": {
@@ -70,16 +96,135 @@ def format_response_blocks(text):
             }
         },
         {
+            "type": "divider"
+        },
+        {
             "type": "context",
             "elements": [
                 {
                     "type": "mrkdwn",
-                    "text": "💳 _Powered by Travel Card Agent_"
+                    "text": "💡 _Need clarification? Just ask me for more details!_"
                 }
             ]
         }
     ]
     return blocks
+
+def format_worker_list_blocks(text):
+    """Format worker list response with structured layout"""
+    blocks = [
+        {
+            "type": "header",
+            "text": {
+                "type": "plain_text",
+                "text": "👥 Worker Search Results",
+                "emoji": True
+            }
+        },
+        {
+            "type": "section",
+            "text": {
+                "type": "mrkdwn",
+                "text": text
+            }
+        },
+        {
+            "type": "divider"
+        },
+        {
+            "type": "context",
+            "elements": [
+                {
+                    "type": "mrkdwn",
+                    "text": "💬 _Reply with the worker's name to provision their card_"
+                }
+            ]
+        }
+    ]
+    return blocks
+
+def format_card_confirmation_blocks(text):
+    """Format card confirmation response with success styling"""
+    blocks = [
+        {
+            "type": "header",
+            "text": {
+                "type": "plain_text",
+                "text": "✅ Travel Card Provisioned Successfully!",
+                "emoji": True
+            }
+        },
+        {
+            "type": "section",
+            "text": {
+                "type": "mrkdwn",
+                "text": text
+            }
+        },
+        {
+            "type": "divider"
+        },
+        {
+            "type": "section",
+            "text": {
+                "type": "mrkdwn",
+                "text": "*Next Steps:*\n• Card details uploaded to Workday Company Property\n• Employee will receive card information\n• Card is ready for travel expenses"
+            }
+        },
+        {
+            "type": "context",
+            "elements": [
+                {
+                    "type": "mrkdwn",
+                    "text": "💳 _Powered by Stripe & Workday_"
+                }
+            ]
+        }
+    ]
+    return blocks
+
+def format_generic_blocks(text):
+    """Format generic response with clean, professional layout"""
+    blocks = [
+        {
+            "type": "section",
+            "text": {
+                "type": "mrkdwn",
+                "text": f"💬 {text}"
+            }
+        },
+        {
+            "type": "context",
+            "elements": [
+                {
+                    "type": "mrkdwn",
+                    "text": "💳 _Travel Card Assistant • Powered by Flowise_"
+                }
+            ]
+        }
+    ]
+    return blocks
+
+def format_response_blocks(text):
+    """Format Flowise response text into Slack Block Kit blocks
+    Automatically detects response type and applies appropriate formatting
+    
+    Args:
+        text: The response text from Flowise
+        
+    Returns:
+        List of Slack blocks for rich formatting
+    """
+    response_type = detect_response_type(text)
+    
+    if response_type == 'expense_policy':
+        return format_expense_policy_blocks(text)
+    elif response_type == 'worker_list':
+        return format_worker_list_blocks(text)
+    elif response_type == 'card_confirmation':
+        return format_card_confirmation_blocks(text)
+    else:
+        return format_generic_blocks(text)
 
 def chat_with_flowise(message, slack_user_id, thread_id=None):
     """Send message to Flowise and get response
