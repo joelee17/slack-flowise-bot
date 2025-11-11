@@ -52,8 +52,41 @@ def get_flowise_session_id(slack_user_id, thread_id=None):
     
     return thread_sessions[session_key]
 
+def format_response_blocks(text):
+    """Format Flowise response text into Slack Block Kit blocks
+    
+    Args:
+        text: The response text from Flowise
+        
+    Returns:
+        List of Slack blocks for rich formatting
+    """
+    blocks = [
+        {
+            "type": "section",
+            "text": {
+                "type": "mrkdwn",
+                "text": text
+            }
+        },
+        {
+            "type": "context",
+            "elements": [
+                {
+                    "type": "mrkdwn",
+                    "text": "💳 _Powered by Travel Card Agent_"
+                }
+            ]
+        }
+    ]
+    return blocks
+
 def chat_with_flowise(message, slack_user_id, thread_id=None):
-    """Send message to Flowise and get response"""
+    """Send message to Flowise and get response
+    
+    Returns:
+        dict: Contains 'text' and 'blocks' for Slack formatting
+    """
     try:
         session_id = get_flowise_session_id(slack_user_id, thread_id)
         
@@ -80,18 +113,33 @@ def chat_with_flowise(message, slack_user_id, thread_id=None):
             if isinstance(result, dict):
                 flowise_response = result.get('text', result.get('output', result.get('answer', str(result))))
                 logger.info(f"Response length: {len(flowise_response) if flowise_response else 0}")
-                return flowise_response
+                
+                # Return both text (for fallback) and blocks (for rich formatting)
+                return {
+                    'text': flowise_response,
+                    'blocks': format_response_blocks(flowise_response)
+                }
             else:
-                return str(result)
+                text = str(result)
+                return {
+                    'text': text,
+                    'blocks': format_response_blocks(text)
+                }
         else:
-            error_msg = f"Error: HTTP {response.status_code} from Flowise"
-            logger.error(f"Flowise error: {error_msg}")
-            return f"Sorry, I encountered an error connecting to the travel card service. Please try again."
+            error_msg = f"Sorry, I encountered an error connecting to the travel card service. Please try again."
+            logger.error(f"Flowise error: HTTP {response.status_code}")
+            return {
+                'text': error_msg,
+                'blocks': format_response_blocks(f"⚠️ {error_msg}")
+            }
             
     except Exception as e:
-        error_msg = f"Error communicating with Flowise: {str(e)}"
-        logger.error(error_msg)
-        return f"Sorry, I encountered an error: {str(e)}"
+        error_msg = f"Sorry, I encountered an error: {str(e)}"
+        logger.error(f"Exception: {error_msg}")
+        return {
+            'text': error_msg,
+            'blocks': format_response_blocks(f"⚠️ {error_msg}")
+        }
 
 # Handle app mentions (@bot_name)
 @app.event("app_mention")
@@ -118,9 +166,10 @@ def handle_app_mention(event, say, logger):
     # Get response from Flowise (pass thread_ts for session management)
     response = chat_with_flowise(clean_text, user_id, thread_ts)
     
-    # Reply in thread
+    # Reply in thread with Block Kit formatting
     say(
-        text=response,
+        text=response['text'],  # Fallback text
+        blocks=response['blocks'],  # Rich formatting
         thread_ts=thread_ts
     )
 
@@ -141,14 +190,14 @@ def handle_message(event, say, logger):
     if channel_type == "im":
         logger.info(f"DM from user {user_id}: {text}")
         response = chat_with_flowise(text, user_id, thread_id=None)  # No thread_id for DMs
-        say(text=response)
+        say(text=response['text'], blocks=response['blocks'])
         return
     
     # Handle thread replies (when user replies in a thread where bot is already present)
     if thread_ts:
         logger.info(f"Thread reply from user {user_id} in thread {thread_ts}: {text}")
         response = chat_with_flowise(text, user_id, thread_ts)  # Pass thread_ts for session
-        say(text=response, thread_ts=thread_ts)
+        say(text=response['text'], blocks=response['blocks'], thread_ts=thread_ts)
         return
 
 # Handle slash command (optional)
@@ -171,8 +220,8 @@ def handle_travelcard_command(ack, command, say, logger):
     slash_session_id = f"slash-{user_id}-{datetime.now().strftime('%Y%m%d%H%M%S%f')}"
     response = chat_with_flowise(text, user_id, slash_session_id)
     
-    # Reply to the user
-    say(response)
+    # Reply to the user with Block Kit formatting
+    say(text=response['text'], blocks=response['blocks'])
 
 # Handle app home opened (optional - shows a nice home tab)
 @app.event("app_home_opened")
