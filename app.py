@@ -107,29 +107,34 @@ def handle_app_mention(event, say, logger):
         thread_ts=event.get("thread_ts", event["ts"])
     )
 
-# Handle direct messages
+# Handle direct messages and thread replies
 @app.event("message")
 def handle_message(event, say, logger):
-    """Handle direct messages to the bot"""
+    """Handle direct messages to the bot and thread replies"""
     # Ignore bot messages and messages with subtypes (like message_changed)
     if event.get("subtype") or event.get("bot_id"):
         return
     
-    # Only handle direct messages (DMs)
-    channel_type = event.get("channel_type")
-    if channel_type != "im":
-        return
-    
     user_id = event["user"]
     text = event["text"]
+    channel_type = event.get("channel_type")
+    thread_ts = event.get("thread_ts")
     
-    logger.info(f"DM from user {user_id}: {text}")
+    # Handle direct messages (DMs)
+    if channel_type == "im":
+        logger.info(f"DM from user {user_id}: {text}")
+        response = chat_with_flowise(text, user_id)
+        say(text=response)
+        return
     
-    # Get response from Flowise
-    response = chat_with_flowise(text, user_id)
-    
-    # Reply to the user
-    say(text=response)
+    # Handle thread replies (when user replies in a thread where bot is already present)
+    if thread_ts:
+        # Only respond if the bot was mentioned in the original thread
+        # or if this is a reply in a thread the bot started
+        logger.info(f"Thread reply from user {user_id}: {text}")
+        response = chat_with_flowise(text, user_id)
+        say(text=response, thread_ts=thread_ts)
+        return
 
 # Handle slash command (optional)
 @app.command("/travelcard")
